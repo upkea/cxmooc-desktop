@@ -138,7 +138,7 @@ function hookContents(wc) {
         const msg = typeof message === 'string' ? message : (e && e.message);
         if (typeof msg !== 'string') return;
         // 诊断输出：字体解密等 [CXxxx] 前缀的 console 全部写进 app.log
-        if (msg.indexOf('[CXFONT]') === 0 || msg.indexOf('[CXDEBG]') === 0) {
+        if (msg.indexOf('[CXFONT]') === 0 || msg.indexOf('[CXDEBG]') === 0 || msg.indexOf('[CXLOG]') === 0 || msg.indexOf('[CXVISION]') === 0) {
           log('console:', msg.length > 700 ? msg.slice(0, 700) : msg);
         }
         if (msg.indexOf('[CXREQ]') !== 0) return;

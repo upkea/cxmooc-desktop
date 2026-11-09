@@ -3580,6 +3580,10 @@ var PageLog = /** @class */ (function () {
             args[_i] = arguments[_i];
         }
         var text = this.toStr.apply(this, args);
+        try {
+            console.log("[CXLOG] " + text);
+        }
+        catch (e) { /* mirror */ }
         if (this.el) {
             this.first(text, "#409EFF", "rgba(121, 187, 255, 0.2)");
         }
@@ -3595,6 +3599,10 @@ var PageLog = /** @class */ (function () {
             args[_i] = arguments[_i];
         }
         var text = this.toStr.apply(this, args);
+        try {
+            console.log("[CXLOG] " + text);
+        }
+        catch (e) { /* mirror */ }
         if (this.el) {
             this.first(text, "#5C3C00", "rgba(250, 236, 216, 0.4)");
         }
