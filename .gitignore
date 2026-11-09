@@ -3,7 +3,10 @@ npm-cache/
 tmp/
 dist/
 release/
+release-ci/
 out/
 *.log
 *.txt
 app-inject.js
+smoke-out.txt
+build-out.txt

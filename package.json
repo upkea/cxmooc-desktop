@@ -35,6 +35,7 @@
       "package.json"
     ],
     "win": {
+      "icon": "build-resources/icon.ico",
       "target": [
         "dir",
         "nsis"
