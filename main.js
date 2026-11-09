@@ -355,50 +355,16 @@ ipcMain.handle('cx-request', async (e, details) => {
   }
 });
 
-// 视觉读题：整页可视区截图（CDP scale=2，不改变页面缩放，用户无感）
+// 视觉读题：整页可视区截图（Electron 原生 capturePage，稳定不出现平铺伪影）
 ipcMain.handle('cx-capture', async (e, arg) => {
   const wc = e.sender;
   try {
-    const full = !!(arg && arg.full);
-    const vp = wc.getOwnerBrowserWindow ? wc.getOwnerBrowserWindow() : null;
-    let viewW = 1200;
-    let viewH = 800;
-    try {
-      const b = BrowserWindow.fromWebContents(wc);
-      if (b) {
-        const cs = b.getContentSize();
-        viewW = cs[0];
-        viewH = cs[1];
-      }
-    } catch (err) { /* ignore */ }
-    const x = 0;
-    const y = 0;
-    const w = Math.min(viewW, 1400);
-    const h = Math.min(viewH, 900);
     let dataUrl = null;
-    try {
-      const dbg = wc.debugger;
-      if (!dbg.isAttached()) {
-        dbg.attach('1.3');
-      }
-      const shot = await dbg.sendCommand('Page.captureScreenshot', {
-        format: 'png',
-        clip: { x: x, y: y, width: w, height: h, scale: full ? 2 : 2 },
-        fromSurface: true,
-      });
-      if (shot && shot.data) {
-        dataUrl = 'data:image/png;base64,' + shot.data;
-        log('capture(cdp):', w + 'x' + h, '@2x', full ? '(full viewport)' : '');
-      }
-    } catch (err) {
-      log('capture cdp failed:', String((err && err.message) || err));
-    }
-    if (!dataUrl) {
-      const image = await wc.capturePage({ x: x, y: y, width: w, height: h });
-      dataUrl = image.toDataURL();
-      log('capture:', image.getSize().width + 'x' + image.getSize().height);
-    }
-    // 太大就缩放（视觉接口对大图不友好）
+    // 原生整窗截图（capturePage 内部处理 DPI，结果稳定）
+    const image = await wc.capturePage();
+    dataUrl = image.toDataURL();
+    log('capture: native', image.getSize().width + 'x' + image.getSize().height);
+    // 图片过宽就等比缩小（视觉接口对大图不友好）
     try {
       const ni = nativeImage.createFromDataURL(dataUrl);
       const sz = ni.getSize();
