@@ -69,7 +69,15 @@
         var invoke = liveBridge();
         try { console.log('[CXDEBG] request url=' + String((details.url || '')).slice(0, 60) + ' bridge=' + (invoke ? 'yes' : 'NO')); } catch (e) { /* ignore */ }
         if (invoke) {
-          invoke(details)
+          // 关键：IPC 结构化克隆不接受函数——把回调剥掉，只传纯数据
+          var clean = {
+            url: details.url,
+            method: details.method || 'GET',
+            headers: details.headers || {},
+            data: details.data != null ? String(details.data) : null,
+            timeout: details.timeout || 30000,
+          };
+          invoke(clean)
             .then(function (res) { runResponse(details, res, details.onload, details.onreadystatechange, details.onerror); })
             .catch(function (e) { fail(e); });
         } else {
