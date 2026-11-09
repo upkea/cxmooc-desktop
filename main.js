@@ -93,68 +93,54 @@ function injectSource() {
   return shims + '\n' + body;
 }
 
-function hookInjection(w) {
+const hookedWc = new WeakSet();
+
+function hookContents(wc) {
+  if (!wc || hookedWc.has(wc)) return;
+  hookedWc.add(wc);
+  const kind = (wc.getType && wc.getType()) || '?';
   try {
-    const dbg = w.webContents.debugger;
+    const dbg = wc.debugger;
     dbg.attach('1.3');
     dbg.sendCommand('Page.enable');
     dbg.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: injectSource() });
-    log('injection attached (document-start)');
+    log('injection attached (document-start) for', kind);
   } catch (e) {
-    log('debugger attach failed:', e.message);
+    log('debugger attach failed (' + kind + '):', e.message);
   }
-  w.webContents.on('dom-ready', () => {
+  wc.on('dom-ready', () => {
     try {
-      w.webContents.executeJavaScript('window.__cxInjected === true', true).then((ok) => {
-        if (!ok) w.webContents.executeJavaScript(injectSource(), true).catch(() => {});
+      wc.executeJavaScript('window.__cxInjected === true', true).then((ok) => {
+        if (!ok) wc.executeJavaScript(injectSource(), true).catch(() => {});
       }).catch(() => {});
     } catch (e) { /* ignore */ }
   });
-  w.webContents.on('did-finish-load', () => log('load:', w.webContents.getURL()));
-  w.webContents.on('did-fail-load', (e, code, desc, url) => log('fail-load:', code, desc || '', url || ''));
+  wc.on('did-finish-load', () => log('load:', wc.getURL()));
+  wc.on('did-fail-load', (e, code, desc, url) => log('fail-load:', code, desc || '', url || ''));
+  // 页面里 window.open：学习通域名 → 转成标签页；其他 → 系统浏览器
+  try {
+    wc.setWindowOpenHandler(({ url }) => {
+      if (isCxUrl(url)) {
+        try {
+          if (win && !win.isDestroyed()) win.webContents.send('cx-new-tab', url);
+        } catch (err) { /* ignore */ }
+      } else if (url && /^https?:/i.test(url)) {
+        shell.openExternal(url);
+      }
+      return { action: 'deny' };
+    });
+  } catch (e) { /* ignore */ }
 }
 
 const CX_DOMAINS = /^(https?:\/\/([a-z0-9-]+\.)*(chaoxing\.com|xueyinonline\.com|zhihuishu\.com|erya100\.com)(\/|$))/i;
 function isCxUrl(u) { return !!u && CX_DOMAINS.test(u); }
 
-// 课程页经常 window.open 弹出——学习通域名一律开成应用内新窗口（保持注入），
-// 其他链接交给系统浏览器。
-const popups = [];
-function createPopup(url) {
+// 每个 webview 标签都是独立 WebContents：创建时立刻挂注入
+app.on('web-contents-created', (e, wc) => {
   try {
-    const p = new BrowserWindow({
-      width: 1200,
-      height: 850,
-      title: '学习通 · 学习辅助',
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: false,
-        nodeIntegration: false,
-        sandbox: false,
-      },
-    });
-    p.webContents.setUserAgent(CHROME_UA);
-    hookInjection(p);
-    p.webContents.setWindowOpenHandler(({ url: u }) => {
-      if (isCxUrl(u)) {
-        createPopup(u);
-      } else if (u && /^https?:/i.test(u)) {
-        shell.openExternal(u);
-      }
-      return { action: 'deny' };
-    });
-    popups.push(p);
-    p.on('closed', () => {
-      const i = popups.indexOf(p);
-      if (i >= 0) popups.splice(i, 1);
-    });
-    p.loadURL(url).catch((e) => log('popup load err:', e.message));
-    return true;
-  } catch (e) {
-    log('popup create failed:', e.message);
-    return false;
-  }
-}
+    if (wc.getType() === 'webview') hookContents(wc);
+  } catch (err) { /* ignore */ }
+});
 
 function createWindow() {
   win = new BrowserWindow({
@@ -167,18 +153,11 @@ function createWindow() {
       contextIsolation: false,
       nodeIntegration: false,
       sandbox: false,
+      webviewTag: true,
     },
   });
   win.webContents.setUserAgent(CHROME_UA);
-  hookInjection(win);
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isCxUrl(url)) {
-      createPopup(url);
-    } else if (url && /^https?:/i.test(url)) {
-      shell.openExternal(url);
-    }
-    return { action: 'deny' };
-  });
+  hookContents(win.webContents);
   // 关闭按钮 → 收进托盘（退出请用托盘菜单）
   win.on('close', (e) => {
     if (!quitting && !IS_SMOKE) {
@@ -186,13 +165,13 @@ function createWindow() {
       win.hide();
     }
   });
-  win.loadURL(HOME_URL).catch((e) => log('loadURL err:', e.message));
+  win.loadFile(path.join(__dirname, 'shell.html')).catch((e) => log('loadFile err:', e.message));
 
   if (IS_SMOKE) {
     setTimeout(async () => {
       try {
         const ok = await win.webContents.executeJavaScript(
-          '({inj: window.__cxInjected === true, gm: typeof window.GM_xmlhttpRequest, gs: typeof window.GM_setValue, ua: navigator.userAgent.slice(0, 60)})',
+          '({tabs: document.querySelectorAll("webview").length, ua: navigator.userAgent.slice(0, 60)})',
           true
         );
         log('smoke check:', JSON.stringify(ok));
@@ -262,18 +241,29 @@ ipcMain.on('cx-cfg-set', (e, arg) => {
   try {
     store.set(String(arg && arg.k), arg && arg.v);
     e.returnValue = true;
-    // 通知学习通窗口里的脚本（页面 GM 桥是同步直读主仓库，这里只是让面板能立即刷新）
+    // 通知所有页面（含标签 webview）让面板能立即刷新
     try {
-      for (const w of BrowserWindow.getAllWindows()) {
-        if (w !== settingsWin && !w.isDestroyed()) {
-          w.webContents.send('cx-cfg-changed', { k: String(arg && arg.k), v: arg && arg.v });
-        }
+      for (const wc of webContentsIterator()) {
+        wc.send('cx-cfg-changed', { k: String(arg && arg.k), v: arg && arg.v });
       }
     } catch (err) { /* ignore */ }
   } catch (err) {
     e.returnValue = false;
   }
 });
+function webContentsIterator() {
+  try {
+    const all = (require('electron').webContents || null);
+    if (all && typeof all.getAllWebContents === 'function') {
+      return all.getAllWebContents().filter((wc) => {
+        return !settingsWin || wc !== settingsWin.webContents;
+      });
+    }
+  } catch (e) { /* ignore */ }
+  return BrowserWindow.getAllWindows()
+    .filter((w) => w !== settingsWin && !w.isDestroyed())
+    .map((w) => w.webContents);
+}
 ipcMain.on('cx-cfg-all', (e) => {
   try { e.returnValue = store.getAll(); } catch (err) { e.returnValue = {}; }
 });
