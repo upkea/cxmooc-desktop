@@ -21,13 +21,24 @@
 ## 开发
 
 ```bash
-# 1) 生成注入 bundle（vendor 下的头 + webpack 产物）
+# 1) 首次：装依赖 + 下载 Electron 二进制（npmmirror 镜像）
+npm install --ignore-scripts --registry=https://registry.npmmirror.com
+node get-electron-bin.js
+
+# 2) 生成注入 bundle（vendor 下的头 + webpack 产物）
 node make-bundle.js
-# 2) 启动
+
+# 3) 启动
 start.bat   # 或 npm start
+
 # 烟雾测试（隐藏窗口跑 30 秒，日志写 smoke.log）
 npm run smoke
+
+# 4) 打包（win-unpacked + NSIS 安装包 → release/）
+npm run dist
 ```
+
+> 打包走 npmmirror 镜像：`ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`；配置里已用 `electronDist` 指向本地 `node_modules/electron/dist`，不会重复下载。
 
 ## 目录
 

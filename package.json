@@ -18,7 +18,9 @@
   "build": {
     "appId": "com.upke.cxmooc-desktop",
     "productName": "学习通学习辅助",
-    "npmRebuild": false,
+    "electronVersion": "33.4.11",
+    "electronDist": "node_modules/electron/dist",
+    "beforeBuild": "before-build.js",
     "directories": {
       "output": "release"
     },
