@@ -1,10 +1,17 @@
 @echo off
-chcp 65001 >nul
-title 学习通桌面版
+title cxmooc-desktop
 cd /d "%~dp0"
 if not exist "node_modules\electron\dist\electron.exe" (
-  echo [错误] 没找到 Electron 运行时，请先双击 get-electron-bin 或重新运行安装。
+  echo [ERROR] electron.exe not found. Run: node get-electron-bin.js
   pause
   exit /b 1
 )
-"node_modules\electron\dist\electron.exe" .
+echo Starting app...
+"node_modules\electron\dist\electron.exe" . --no-sandbox --no-zygote --disable-gpu-compositing --use-angle=d3d11-warp-webgl
+if errorlevel 1 (
+  echo.
+  echo [FAILED] exit code = %errorlevel%
+  echo - If another instance is running: kill all electron.exe in Task Manager, then retry
+  echo - Send me everything printed above
+  pause
+)

@@ -15,6 +15,19 @@ if (!app) {
 
 const IS_SMOKE = process.argv.includes('--smoke');
 
+// 兼容性开关：这台机器（无独立 GPU / 特殊图形环境）上 Chromium 默认初始化会崩，
+// 参照本机 DSH 桌面宠物的可用组合：软件渲染 + 单进程化系统服务。
+// 必须在 app ready 之前设置。
+try {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('no-sandbox');
+  app.commandLine.appendSwitch('no-zygote');
+  app.commandLine.appendSwitch('disable-gpu-compositing');
+  app.commandLine.appendSwitch('use-angle', 'd3d11-warp-webgl');
+} catch (e) {
+  console.error('[cxmooc] compat switches failed:', e && e.message);
+}
+
 const CHROME_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const HOME_URL = 'https://i.chaoxing.com';
