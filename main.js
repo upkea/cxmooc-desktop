@@ -356,25 +356,15 @@ ipcMain.handle('cx-request', async (e, details) => {
 });
 
 // 视觉读题：CDP 高清截图（scale=2，不改变页面缩放，用户无感）
+// 坐标由页面侧换算成顶层文档坐标（题目可能在任何 iframe 里）
 ipcMain.handle('cx-capture', async (e, arg) => {
   const wc = e.sender;
-  const id = String((arg && arg.id) || '');
+  const rect = (arg && arg.rect) || {};
   try {
-    // 让页面把元素滚到可视区并返回相对文档的坐标
-    const rect = await wc.executeJavaScript(
-      '(function(){var el=document.querySelector(\'[data-cxq="' + id + '"]\');' +
-      'if(!el) return null; try{el.scrollIntoView({block:"center"});}catch(e){};' +
-      'var r=el.getBoundingClientRect();' +
-      'return {x:r.left+window.scrollX,y:r.top+window.scrollY,w:r.width,h:r.height};})()',
-      true
-    );
-    if (!rect) {
-      log('capture: element not found', id);
-      return { error: 'element not found' };
-    }
-    const w = Math.max(1, Math.min(Math.round(rect.w), 1200));
-    const h = Math.max(1, Math.min(Math.round(rect.h), 1600));
-    // 优先 CDP 高清截图（scale 2 倍，不动页面缩放）
+    const x = Math.max(0, Math.round(rect.x || 0));
+    const y = Math.max(0, Math.round(rect.y || 0));
+    const w = Math.max(1, Math.min(Math.round(rect.width || 100), 1200));
+    const h = Math.max(1, Math.min(Math.round(rect.height || 100), 1600));
     try {
       const dbg = wc.debugger;
       if (!dbg.isAttached()) {
@@ -382,7 +372,7 @@ ipcMain.handle('cx-capture', async (e, arg) => {
       }
       const shot = await dbg.sendCommand('Page.captureScreenshot', {
         format: 'png',
-        clip: { x: Math.round(rect.x), y: Math.round(rect.y), width: w, height: h, scale: 2 },
+        clip: { x: x, y: y, width: w, height: h, scale: 2 },
         fromSurface: true,
       });
       if (shot && shot.data) {
@@ -390,20 +380,12 @@ ipcMain.handle('cx-capture', async (e, arg) => {
         return { dataUrl: 'data:image/png;base64,' + shot.data };
       }
     } catch (err) {
-      log('capture cdp failed, fallback zoom:', String((err && err.message) || err));
+      log('capture cdp failed:', String((err && err.message) || err));
     }
-    // 兜底：旧的放大截图方式
-    const oldZoom = wc.getZoomFactor();
-    try {
-      wc.setZoomFactor(Math.min(2.5, oldZoom * 2));
-      await new Promise((r) => setTimeout(r, 350));
-      const image = await wc.capturePage({ x: Math.max(0, Math.round(rect.x)), y: Math.max(0, Math.round(rect.y)), width: w, height: h });
-      return { dataUrl: image.toDataURL() };
-    } finally {
-      try {
-        wc.setZoomFactor(oldZoom);
-      } catch (err) { /* ignore */ }
-    }
+    // 兜底：普通截图
+    const image = await wc.capturePage({ x: x, y: y, width: w, height: h });
+    log('capture:', image.getSize().width + 'x' + image.getSize().height);
+    return { dataUrl: image.toDataURL() };
   } catch (err) {
     log('capture ERR:', String((err && err.message) || err));
     return { error: String((err && err.message) || err) };
