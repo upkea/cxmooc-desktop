@@ -129,6 +129,15 @@
         return Promise.reject(new Error('no capture bridge'));
       };
     }
+    // 真实鼠标点击（CDP 派发可信事件，部分页面只认真实点击）
+    if (typeof w.cxClick !== 'function') {
+      w.cxClick = function (rect) {
+        try {
+          if (typeof w.__cxClick === 'function') return w.__cxClick(rect);
+        } catch (e) { /* ignore */ }
+        return Promise.reject(new Error('no click bridge'));
+      };
+    }
     if (typeof w.__cxOnCfgChanged !== 'function') w.__cxOnCfgChanged = null;
   } catch (e) {
     // ignore

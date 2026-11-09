@@ -406,6 +406,29 @@ ipcMain.handle('cx-capture', async (e, arg) => {
   }
 });
 
+// 真实鼠标点击：用 CDP 在指定视口坐标派发可信鼠标事件（学习通新版页面只认真实点击）
+ipcMain.handle('cx-click', async (e, arg) => {
+  const wc = e.sender;
+  try {
+    const rect = (arg && arg.rect) || {};
+    const cx = Math.round((Number(rect.x) || 0) + (Number(rect.width) || 0) / 2);
+    const cy = Math.round((Number(rect.y) || 0) + (Number(rect.height) || 0) / 2);
+    const dbg = wc.debugger;
+    if (!dbg.isAttached()) {
+      dbg.attach('1.3');
+    }
+    await dbg.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: cx, y: cy, button: 'none' });
+    await dbg.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: cx, y: cy, button: 'left', clickCount: 1 });
+    await new Promise((r) => setTimeout(r, 60));
+    await dbg.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: cx, y: cy, button: 'left', clickCount: 1 });
+    log('click(cdp):', cx + ',' + cy);
+    return { ok: true };
+  } catch (err) {
+    log('click ERR:', String((err && err.message) || err));
+    return { error: String((err && err.message) || err) };
+  }
+});
+
 ipcMain.handle('cx-open-main', () => {  try {
     if (win) { win.show(); win.focus(); }
     return true;
