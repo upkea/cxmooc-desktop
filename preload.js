@@ -10,6 +10,7 @@ if (!window.__cxIpcReady) {
     onFocusTab: function (fn) { ipcRenderer.on('cx-focus-tab', function (e, url) { fn(url); }); },
   };
   window.__cxIpcRequest = (details) => ipcRenderer.invoke('cx-request', details);
+  window.__cxCapture = (rect) => ipcRenderer.invoke('cx-capture', { rect });
   window.__cxInvoke = (channel, ...args) => ipcRenderer.invoke(channel, ...args);
   window.__cxCfgGet = (k, d) => ipcRenderer.sendSync('cx-cfg-get', { k, d });
   window.__cxCfgSet = (k, v) => ipcRenderer.sendSync('cx-cfg-set', { k, v });

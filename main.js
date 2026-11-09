@@ -355,8 +355,27 @@ ipcMain.handle('cx-request', async (e, details) => {
   }
 });
 
-ipcMain.handle('cx-open-main', () => {
+// 视觉读题：截取页面元素区域的图片（返回 dataURL）
+ipcMain.handle('cx-capture', async (e, arg) => {
   try {
+    const rect = (arg && arg.rect) || {};
+    const wc = e.sender;
+    const image = await wc.capturePage({
+      x: Math.max(0, Math.round(rect.x || 0)),
+      y: Math.max(0, Math.round(rect.y || 0)),
+      width: Math.max(1, Math.round(rect.width || 100)),
+      height: Math.max(1, Math.round(rect.height || 100)),
+    });
+    const size = image.getSize();
+    log('capture:', size.width + 'x' + size.height);
+    return { dataUrl: image.toDataURL() };
+  } catch (err) {
+    log('capture ERR:', String((err && err.message) || err));
+    return { error: String((err && err.message) || err) };
+  }
+});
+
+ipcMain.handle('cx-open-main', () => {  try {
     if (win) { win.show(); win.focus(); }
     return true;
   } catch (e) { return false; }

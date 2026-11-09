@@ -120,6 +120,15 @@
     }
     w.unsafeWindow = w;
     w.__cxInjected = true;
+    // 视觉读题：截取页面元素区域（走 preload 桥）
+    if (typeof w.cxCapture !== 'function') {
+      w.cxCapture = function (rect) {
+        try {
+          if (typeof w.__cxCapture === 'function') return w.__cxCapture(rect);
+        } catch (e) { /* ignore */ }
+        return Promise.reject(new Error('no capture bridge'));
+      };
+    }
     if (typeof w.__cxOnCfgChanged !== 'function') w.__cxOnCfgChanged = null;
   } catch (e) {
     // ignore
