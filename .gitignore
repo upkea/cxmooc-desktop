@@ -2,6 +2,7 @@ node_modules/
 npm-cache/
 tmp/
 dist/
+release/
 out/
 *.log
 app-inject.js
