@@ -355,23 +355,43 @@ ipcMain.handle('cx-request', async (e, details) => {
   }
 });
 
-// 视觉读题：截取页面元素区域的图片（返回 dataURL）
+// 视觉读题：把元素区域放大 2 倍再截图（文字更清晰，视觉模型识别率更高）
 ipcMain.handle('cx-capture', async (e, arg) => {
+  const wc = e.sender;
+  const id = String((arg && arg.id) || '');
+  const oldZoom = wc.getZoomFactor();
   try {
-    const rect = (arg && arg.rect) || {};
-    const wc = e.sender;
+    wc.setZoomFactor(Math.min(2.5, oldZoom * 2));
+    await new Promise((r) => setTimeout(r, 400));
+    const rect = await wc.executeJavaScript(
+      '(function(){var el=document.querySelector(\'[data-cxq="' + id + '"]\');' +
+      'if(!el) return null; try{el.scrollIntoView({block:"center"});}catch(e){};' +
+      'var r=el.getBoundingClientRect();' +
+      'return {x:r.left,y:r.top,w:r.width,h:r.height};})()',
+      true
+    );
+    if (!rect) {
+      log('capture: element not found', id);
+      return { error: 'element not found' };
+    }
+    const w = Math.max(1, Math.min(Math.round(rect.w), 1400));
+    const h = Math.max(1, Math.min(Math.round(rect.h), 1800));
     const image = await wc.capturePage({
-      x: Math.max(0, Math.round(rect.x || 0)),
-      y: Math.max(0, Math.round(rect.y || 0)),
-      width: Math.max(1, Math.round(rect.width || 100)),
-      height: Math.max(1, Math.round(rect.height || 100)),
+      x: Math.max(0, Math.round(rect.x)),
+      y: Math.max(0, Math.round(rect.y)),
+      width: w,
+      height: h,
     });
     const size = image.getSize();
-    log('capture:', size.width + 'x' + size.height);
+    log('capture:', size.width + 'x' + size.height, '(zoom ' + wc.getZoomFactor() + ')');
     return { dataUrl: image.toDataURL() };
   } catch (err) {
     log('capture ERR:', String((err && err.message) || err));
     return { error: String((err && err.message) || err) };
+  } finally {
+    try {
+      wc.setZoomFactor(oldZoom);
+    } catch (err) { /* ignore */ }
   }
 });
 
