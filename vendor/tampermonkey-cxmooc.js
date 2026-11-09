@@ -5704,6 +5704,26 @@ var cxQuestion = /** @class */ (function () {
                 return withInput;
             }
         }
+        // 5) 终极兜底：整个文档里找 li（单题页安全，多题页取前 12 个）
+        if (ret.length == 0) {
+            try {
+                var all = this.context ? this.context.document.querySelectorAll("li") : document.querySelectorAll("li");
+                var guard = 0;
+                for (var i = 0; i < all.length && guard < 12; i++) {
+                    if (ret.indexOf(all[i]) < 0) {
+                        ret.push(all[i]);
+                        guard++;
+                    }
+                }
+            }
+            catch (e) { /* ignore */ }
+        }
+        try {
+            if (ret.length == 0) {
+                Application.App.log.Warn("选项抓取失败：el=" + ((this.el && this.el.className) || "") + " li=" + (this.el ? this.el.querySelectorAll("li").length : -1) + " docLi=" + (this.context ? this.context.document.querySelectorAll("li").length : -1));
+            }
+        }
+        catch (e) { /* ignore */ }
         return ret;
     };
     cxQuestion.prototype.isCorrect = function () {
