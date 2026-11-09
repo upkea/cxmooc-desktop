@@ -84,6 +84,32 @@
   </div>
 
   <div class="card">
+    <h2>拟人化</h2>
+    <div class="row">
+      <label for="speed-limit">倍速上限</label>
+      <select id="speed-limit">
+        <option value="1">1x（最稳）</option>
+        <option value="1.5">1.5x</option>
+        <option value="2">2x</option>
+        <option value="3">3x</option>
+        <option value="0">不限</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="wrong-rate">故意答错率</label>
+      <input type="text" id="wrong-rate" placeholder="0" style="width:90px;flex:none;">
+      <span class="status dim">%（仅单选/判断，0 = 全对）</span>
+    </div>
+    <div class="row">
+      <label>随机延迟</label>
+      <span class="switch">
+        <input type="checkbox" id="random-delay" checked>
+        <span class="status dim">每题间隔加 0~3 秒</span>
+      </span>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>窗口</h2>
     <div class="btns">
       <button id="btn-open">打开学习通</button>

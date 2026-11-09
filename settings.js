@@ -11,7 +11,8 @@
     enable: $('ai-enable'), enableText: $('ai-enable-text'),
     provider: $('ai-provider'), key: $('ai-key'), base: $('ai-base'), model: $('ai-model'),
     status: $('ai-status'), save: $('btn-save'), test: $('btn-test'),
-    open: $('btn-open'), docs: $('btn-docs'), repo: $('lnk-repo')
+    open: $('btn-open'), docs: $('btn-docs'), repo: $('lnk-repo'),
+    speed: $('speed-limit'), wrong: $('wrong-rate'), randomDelay: $('random-delay')
   };
 
   function setStatus(text, cls) {
@@ -61,10 +62,13 @@
     el.provider.value = matchProvider(base);
     applyProvider(el.provider.value);
     if (!base && !all.ai_model) {
-      // 全新使用时给个友好的默认服务商
       el.provider.value = 'zhipu';
       applyProvider('zhipu');
     }
+    // 拟人化
+    el.speed.value = String(all.speed_limit === undefined || all.speed_limit === null ? '2' : all.speed_limit);
+    el.wrong.value = String(all.wrong_rate === undefined || all.wrong_rate === null ? '0' : all.wrong_rate);
+    el.randomDelay.checked = !(all.random_delay === 'false' || all.random_delay === false);
     if (all.ai_key) {
       setStatus('已保存的 Key 存在，点击「测试连接」验证', 'ok');
     } else {
@@ -79,6 +83,10 @@
       window.__cxCfgSet('ai_base', c.base || PROVIDERS.zhipu.base);
       window.__cxCfgSet('ai_key', c.key);
       window.__cxCfgSet('ai_model', c.model || PROVIDERS.zhipu.model);
+      // 拟人化
+      window.__cxCfgSet('speed_limit', String(el.speed.value || '2'));
+      window.__cxCfgSet('wrong_rate', String(parseFloat(el.wrong.value || '0') || 0));
+      window.__cxCfgSet('random_delay', el.randomDelay.checked ? 'true' : 'false');
       el.enableText.textContent = c.enable ? '开启' : '关闭';
       el.enableText.className = 'status ' + (c.enable ? 'ok' : 'bad');
       if (!c.key) setStatus('已保存（Key 为空，答题不会生效）', 'bad');
