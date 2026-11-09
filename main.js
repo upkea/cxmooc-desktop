@@ -363,7 +363,7 @@ ipcMain.handle('cx-capture', async (e, arg) => {
     const image = await wc.capturePage();
     const full = image.getSize();
     let dataUrl = image.toDataURL();
-    log('capture: native', full.width + 'x' + full.height, rect ? 'crop' : 'full');
+    log('capture: native', full.width + 'x' + full.height, rect ? 'rect=' + JSON.stringify(rect) : 'no-rect');
     if (rect && rect.width > 10 && rect.height > 10) {
       try {
         // 视口 CSS 尺寸 → 图片像素缩放比
@@ -373,14 +373,17 @@ ipcMain.handle('cx-capture', async (e, arg) => {
         } catch (err) { /* ignore */ }
         const ratio = vpW > 0 ? full.width / vpW : 1;
         const ni = nativeImage.createFromDataURL(dataUrl);
-        const cropX = Math.max(0, Math.floor(rect.x * ratio));
-        const cropY = Math.max(0, Math.floor(rect.y * ratio));
-        const cropW = Math.min(full.width - cropX, Math.floor(rect.width * ratio));
-        const cropH = Math.min(full.height - cropY, Math.floor(rect.height * ratio));
+        let cropX = Math.max(0, Math.min(full.width - 20, Math.floor(rect.x * ratio)));
+        let cropY = Math.max(0, Math.min(full.height - 20, Math.floor(rect.y * ratio)));
+        let cropW = Math.min(full.width - cropX, Math.floor(rect.width * ratio));
+        let cropH = Math.min(full.height - cropY, Math.floor(rect.height * ratio));
+        log('capture crop-plan:', JSON.stringify({ vpW: vpW, ratio: Number(ratio.toFixed(2)), cropX: cropX, cropY: cropY, cropW: cropW, cropH: cropH }));
         if (cropW > 20 && cropH > 20) {
           const cropped = ni.crop({ x: cropX, y: cropY, width: cropW, height: cropH });
           dataUrl = cropped.toDataURL();
-          log('capture cropped:', cropW + 'x' + cropH, 'ratio=' + ratio.toFixed(2));
+          log('capture cropped:', cropW + 'x' + cropH);
+        } else {
+          log('capture crop skipped (too small)');
         }
       } catch (err) {
         log('capture crop failed:', String((err && err.message) || err));
