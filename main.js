@@ -37,15 +37,20 @@ try {
   console.error('[cxmooc] userData fallback failed:', e && e.message);
 }
 
-// 兼容性开关：这台机器（无独立 GPU / 特殊图形环境）上 Chromium 默认初始化会崩，
-// 参照本机 DSH 桌面宠物的可用组合：软件渲染 + 单进程化系统服务。
+// 兼容性开关：无独立 GPU 的机器用软件渲染（WARP）保证能起；
+// 设 CX_SOFT_RENDER=0 可切回默认渲染（有 GPU 的机器用这个看视频更流畅）。
 // 必须在 app ready 之前设置。
 try {
-  app.disableHardwareAcceleration();
-  app.commandLine.appendSwitch('no-sandbox');
-  app.commandLine.appendSwitch('no-zygote');
-  app.commandLine.appendSwitch('disable-gpu-compositing');
-  app.commandLine.appendSwitch('use-angle', 'd3d11-warp-webgl');
+  if (process.env.CX_SOFT_RENDER !== '0') {
+    app.disableHardwareAcceleration();
+    app.commandLine.appendSwitch('no-sandbox');
+    app.commandLine.appendSwitch('no-zygote');
+    app.commandLine.appendSwitch('disable-gpu-compositing');
+    app.commandLine.appendSwitch('use-angle', 'd3d11-warp-webgl');
+  } else {
+    app.commandLine.appendSwitch('no-sandbox');
+    app.commandLine.appendSwitch('no-zygote');
+  }
 } catch (e) {
   console.error('[cxmooc] compat switches failed:', e && e.message);
 }
