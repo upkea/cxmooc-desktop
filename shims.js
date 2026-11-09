@@ -138,6 +138,35 @@
         return Promise.reject(new Error('no click bridge'));
       };
     }
+    // 按元素点击（自动换算嵌套 iframe 偏移）—— 给目录切章/选项勾选用
+    if (typeof w.cxClickEl !== 'function') {
+      w.cxClickEl = function (el) {
+        try {
+          if (!el) return null;
+          var r = el.getBoundingClientRect();
+          if (!r || r.width < 2 || r.height < 2) return null;
+          var offX = r.left;
+          var offY = r.top;
+          var pw = w;
+          var depth = 0;
+          while (pw && pw.parent && pw.parent !== pw && depth < 6) {
+            var fe = null;
+            try { fe = pw.frameElement; } catch (e) { fe = null; }
+            if (!fe) break;
+            var fr = fe.getBoundingClientRect();
+            offX += fr.left;
+            offY += fr.top;
+            pw = pw.parent;
+            depth++;
+          }
+          offX -= pw.scrollX || 0;
+          offY -= pw.scrollY || 0;
+          return w.cxClick({ x: offX, y: offY, width: r.width, height: r.height });
+        } catch (e) {
+          return null;
+        }
+      };
+    }
     if (typeof w.__cxOnCfgChanged !== 'function') w.__cxOnCfgChanged = null;
   } catch (e) {
     // ignore
