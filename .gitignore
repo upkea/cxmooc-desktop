@@ -5,4 +5,5 @@ dist/
 release/
 out/
 *.log
-app-inject.jsbuild-out.txt
+*.txt
+app-inject.js
