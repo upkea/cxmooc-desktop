@@ -1,13 +1,13 @@
 // cxmooc-desktop 主进程
-// Electron 壳：内嵌学习通网页，注入现有用户脚本（shims + 无头 bundle）+ GM 垫片
+// Electron 壳：内嵌学习通网页注入用户脚本；原生设置窗；托盘；单实例；GitHub 自动更新
 const electron = require('electron');
-const { app, BrowserWindow, session, ipcMain, shell } =
+const { app, BrowserWindow, session, ipcMain, shell, Tray, Menu, nativeImage } =
   electron && typeof electron === 'object' && electron.app ? electron : {};
 const path = require('path');
 const fs = require('fs');
+const store = require('./config-store.js');
 
 if (!app) {
-  // 以错误模式启动（比如被 node 运行 / ELECTRON_RUN_AS_NODE=1）时给出明确提示
   console.error('[cxmooc] Electron 以错误模式启动：require("electron") 没返回主进程 API。');
   console.error('[cxmooc] 请双击 start.bat 启动，不要用 node main.js。');
   process.exit(2);
@@ -15,12 +15,14 @@ if (!app) {
 
 const IS_SMOKE = process.argv.includes('--smoke');
 
-// 学习通用普通 Chrome UA 识别环境，伪装成常规浏览器避免被拦截
 const CHROME_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const HOME_URL = 'https://i.chaoxing.com';
 
 let win = null;
+let settingsWin = null;
+let tray = null;
+let quitting = false;
 
 const LOG = [];
 function log(...a) {
@@ -28,16 +30,28 @@ function log(...a) {
   LOG.push(new Date().toISOString() + ' ' + s);
   console.log('[cxmooc]', s);
 }
-const flushTimer = setInterval(() => {
+setInterval(() => {
   if (LOG.length) {
     try {
-      fs.appendFileSync(path.join(__dirname, IS_SMOKE ? 'smoke.log' : 'app.log'), LOG.join('\n') + '\n');
+      fs.appendFileSync(path.join(app.getPath('userData'), IS_SMOKE ? 'smoke.log' : 'app.log'), LOG.join('\n') + '\n');
     } catch (e) { /* ignore */ }
     LOG.length = 0;
   }
 }, 2000);
 
-// 注入源码 = GM 垫片 + 无头部用户脚本（app-inject.js 由 make-bundle.js 生成）
+// ===== 单实例 =====
+if (!IS_SMOKE) {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    app.quit();
+  } else {
+    app.on('second-instance', () => {
+      if (win) { win.show(); win.focus(); }
+    });
+  }
+}
+
+// ===== 注入 =====
 function injectSource() {
   const shims = fs.readFileSync(path.join(__dirname, 'shims.js'), 'utf8');
   const body = fs.readFileSync(path.join(__dirname, 'app-inject.js'), 'utf8');
@@ -45,7 +59,6 @@ function injectSource() {
 }
 
 function hookInjection(w) {
-  // 通过 CDP 在每个新文档建立时（document-start）注入，保证脚本比页面 JS 先跑
   try {
     const dbg = w.webContents.debugger;
     dbg.attach('1.3');
@@ -55,13 +68,10 @@ function hookInjection(w) {
   } catch (e) {
     log('debugger attach failed:', e.message);
   }
-  // 兜底：dom-ready 时若没跑成功就再补一次
   w.webContents.on('dom-ready', () => {
     try {
       w.webContents.executeJavaScript('window.__cxInjected === true', true).then((ok) => {
-        if (!ok) {
-          w.webContents.executeJavaScript(injectSource(), true).catch(() => {});
-        }
+        if (!ok) w.webContents.executeJavaScript(injectSource(), true).catch(() => {});
       }).catch(() => {});
     } catch (e) { /* ignore */ }
   });
@@ -77,17 +87,23 @@ function createWindow() {
     title: '学习通 · 学习辅助',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: false, // MVP 阶段放开隔离，让脚本能直接操作 window；稳定后再收紧
+      contextIsolation: false,
       nodeIntegration: false,
-      sandbox: false,          // preload 需要 ipcRenderer
+      sandbox: false,
     },
   });
   win.webContents.setUserAgent(CHROME_UA);
   hookInjection(win);
-  // 弹窗一律交给系统浏览器，避免新窗口丢注入
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (url && /^https?:/i.test(url)) shell.openExternal(url);
     return { action: 'deny' };
+  });
+  // 关闭按钮 → 收进托盘（退出请用托盘菜单）
+  win.on('close', (e) => {
+    if (!quitting && !IS_SMOKE) {
+      e.preventDefault();
+      win.hide();
+    }
   });
   win.loadURL(HOME_URL).catch((e) => log('loadURL err:', e.message));
 
@@ -108,17 +124,78 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
-  app.userAgentFallback = CHROME_UA;
-  session.defaultSession.setUserAgent(CHROME_UA);
-  createWindow();
-});
+// ===== 原生设置窗口 =====
+function openSettings() {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.show();
+    settingsWin.focus();
+    return;
+  }
+  settingsWin = new BrowserWindow({
+    width: 540,
+    height: 640,
+    title: '设置 · 学习通学习辅助',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: false,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+  settingsWin.setMenuBarVisibility(false);
+  settingsWin.webContents.setWindowOpenHandler(({ url }) => {
+    if (url && /^https?:/i.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  settingsWin.loadFile(path.join(__dirname, 'settings.html'));
+  settingsWin.on('closed', () => { settingsWin = null; });
+}
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+// ===== 托盘 =====
+const TRAY_ICON_B64 =
+  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAOklEQVR4nGNgGJTA+ZDVf2yYbI1EG0SRAcRqxmkINkX/oZgsA/6jYfobQLEXaBoTtEkHxBhEUOOAAAByeh7o2NFRAwAAAABJRU5ErkJggg==';
 
-// GM_xmlhttpRequest → 主进程 fetch，绕开页面 CORS
+function createTray() {
+  try {
+    const icon = nativeImage.createFromDataURL('data:image/png;base64,' + TRAY_ICON_B64);
+    tray = new Tray(icon);
+    const menu = Menu.buildFromTemplate([
+      { label: '打开学习通', click: () => { if (win) { win.show(); win.focus(); } } },
+      { label: '设置', click: () => openSettings() },
+      { type: 'separator' },
+      { label: '退出', click: () => { quitting = true; app.quit(); } },
+    ]);
+    tray.setToolTip('学习通 · 学习辅助');
+    tray.setContextMenu(menu);
+    tray.on('click', () => { if (win) { win.show(); win.focus(); } });
+  } catch (e) {
+    log('tray failed:', e.message);
+  }
+}
+
+// ===== 配置 IPC（页面脚本与设置窗口共用一份配置）=====
+ipcMain.on('cx-cfg-get', (e, arg) => {
+  try { e.returnValue = store.get((arg && arg.k) || '', arg && arg.d); } catch (err) { e.returnValue = arg && arg.d; }
+});
+ipcMain.on('cx-cfg-set', (e, arg) => {
+  try {
+    store.set(String(arg && arg.k), arg && arg.v);
+    e.returnValue = true;
+    // 通知学习通窗口里的脚本（页面 GM 桥是同步直读主仓库，这里只是让面板能立即刷新）
+    try {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (w !== settingsWin && !w.isDestroyed()) {
+          w.webContents.send('cx-cfg-changed', { k: String(arg && arg.k), v: arg && arg.v });
+        }
+      }
+    } catch (err) { /* ignore */ }
+  } catch (err) {
+    e.returnValue = false;
+  }
+});
+ipcMain.on('cx-cfg-all', (e) => {
+  try { e.returnValue = store.getAll(); } catch (err) { e.returnValue = {}; }
+});
 ipcMain.handle('cx-request', async (e, details) => {
   try {
     details = details || {};
@@ -138,4 +215,47 @@ ipcMain.handle('cx-request', async (e, details) => {
   } catch (err) {
     return { error: String((err && err.message) || err) };
   }
+});
+
+ipcMain.handle('cx-open-main', () => {
+  try {
+    if (win) { win.show(); win.focus(); }
+    return true;
+  } catch (e) { return false; }
+});
+ipcMain.handle('cx-open-url', (e, url) => {
+  try {
+    if (url && /^https?:/i.test(url)) shell.openExternal(url);
+    return true;
+  } catch (e) { return false; }
+});
+
+// ===== 自动更新（仅打包版；GitHub Releases）=====
+function setupUpdater() {
+  if (IS_SMOKE || !app.isPackaged) return;
+  try {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.autoDownload = true;
+    autoUpdater.on('update-downloaded', (info) => {
+      log('update downloaded', info && info.version, '- 退出后自动安装');
+    });
+    autoUpdater.on('error', (e) => log('updater error:', e && e.message));
+    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 10000);
+  } catch (e) {
+    log('updater init failed:', e.message);
+  }
+}
+
+app.whenReady().then(() => {
+  app.userAgentFallback = CHROME_UA;
+  session.defaultSession.setUserAgent(CHROME_UA);
+  store.init(app.getPath('userData'));
+  if (!IS_SMOKE) createTray();
+  createWindow();
+  setupUpdater();
+});
+
+app.on('before-quit', () => { quitting = true; store.flush(); });
+app.on('window-all-closed', () => {
+  // 关窗不退出：学习通挂着走，托盘里能恢复
 });

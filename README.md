@@ -4,19 +4,16 @@
 
 > ⚠️ **仅供个人学习交流使用**，请勿用于代刷、代考等违反学校规定的用途。请遵守所在平台的服务条款，一切使用后果自负。
 
-## 当前状态：MVP（v0.1）
+## 当前状态：M1 完成 + M2 部分（v0.1）
 
-- [x] Electron 壳 + 学习通网页登录（UA 伪装）
+- [x] Electron 壳 + 学习通网页登录（UA 伪装、弹窗外跳、单实例）
 - [x] document-start 注入现有脚本（视频守护 / AI 答题 / 字体解密 / 自动切章全都在）
-- [x] GM API 垫片（GM_xmlhttpRequest 走主进程，绕 CORS；GM_setValue 落 localStorage）
-- [x] 页面内「小工具通知条」配置面板可用（服务商预设 + 自动答题开关 + 连接检测）
-
-## 路线图
-
-- [ ] M2：原生设置界面（AI 配置从页内搬家到应用内）、托盘、开机自启
-- [ ] M2：electron-updater 自动更新（GitHub Releases）
-- [ ] M2：拟人化选项（倍速上限 / 随机延迟 / 故意答错率 / 每日时长上限）
-- [ ] M3：应用图标 / 名称 / 官网文档 / 代码签名 / 安装包分发
+- [x] GM API 垫片（跨域请求走主进程；配置同步直读主进程统一仓库）
+- [x] **原生设置窗口**：服务商预设 + AI Key + 接口/模型 + 自动答题开关 + 「测试连接」（与页面内面板共用同一份配置 `%APPDATA%` 下 `cx-config.json`）
+- [x] 托盘（关闭窗口收进托盘，点托盘恢复）、退出菜单
+- [x] 自动更新（打包版从 GitHub Releases 拉取，`electron-updater`）
+- [ ] 拟人化选项（倍速上限 / 随机延迟 / 故意答错率 / 每日时长上限）
+- [ ] 应用图标 / 代码签名 / 安装包分发
 
 ## 开发
 
@@ -39,13 +36,16 @@ npm run dist
 ```
 
 > 打包走 npmmirror 镜像：`ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`；配置里已用 `electronDist` 指向本地 `node_modules/electron/dist`，不会重复下载。
+> 沙箱/CI 里 npm 子进程被禁止时，加环境变量 `CX_SKIP_DEPS=1` 再打包：跳过依赖收集，产物不含 `electron-updater`（仅用于验证布局，正式包请在本机跑 `npm run dist`）。
 
 ## 目录
 
 ```
-main.js            主进程：窗口 / 注入 / GM 请求转发
-preload.js         IPC 桥
-shims.js           GM 垫片（document-start 注入）
+main.js            主进程：窗口 / 注入 / GM 转发 / 托盘 / 设置窗口 / 自动更新
+config-store.js    统一配置（userData/cx-config.json），页面与设置窗口共用
+preload.js         IPC 桥（请求转发 / 配置读写 / 打开链接）
+shims.js           GM 垫片（document-start 注入；GM_getValue 同步直读主进程配置）
+settings.html/js   原生设置窗口（服务商预设 / Key / 模型 / 自动答题 / 测试连接）
 make-bundle.js     拼 app-inject.js
 vendor/            油猴脚本的头 + webpack 产物（源头见 cxmooc-autoplay）
 get-electron-bin.js  从 npmmirror 下载 Electron 二进制（npm 装完跑一次）

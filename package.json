@@ -29,6 +29,9 @@
       "preload.js",
       "shims.js",
       "app-inject.js",
+      "config-store.js",
+      "settings.html",
+      "settings.js",
       "package.json"
     ],
     "win": {
@@ -41,6 +44,14 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "upkea",
+      "repo": "cxmooc-desktop"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }
