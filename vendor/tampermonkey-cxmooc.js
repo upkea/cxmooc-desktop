@@ -1351,16 +1351,19 @@ var ToolsQuestionBankFacade = /** @class */ (function () {
                                             application_1.Application.App.log.Info("AI 答题中（" + (i + 1) + "/" + list.length + "）：" + title.substring(0, 40));
                                         }
                                         // 诊断：把实际发给 AI 的选项打出来（内容为空说明页面没取到选项文字）
+                                        // 视觉读题模式下选项来自图片，不再打印（避免显示加密字体造成的乱码）
                                         try {
-                                            if (options.length > 0) {
-                                                parts = [];
-                                                for (k = 0; k < options.length; k++) {
-                                                    parts.push(String(options[k].option) + "=" + String(options[k].content || "").slice(0, 20));
+                                            if (!ai_1.VisionEnabled()) {
+                                                if (options.length > 0) {
+                                                    parts = [];
+                                                    for (k = 0; k < options.length; k++) {
+                                                        parts.push(String(options[k].option) + "=" + String(options[k].content || "").slice(0, 20));
+                                                    }
+                                                    application_1.Application.App.log.Info("AI 选项：" + parts.join(" | "));
                                                 }
-                                                application_1.Application.App.log.Info("AI 选项：" + parts.join(" | "));
-                                            }
-                                            else {
-                                                application_1.Application.App.log.Info("AI 选项：没取到选项文字");
+                                                else {
+                                                    application_1.Application.App.log.Info("AI 选项：没取到选项文字");
+                                                }
                                             }
                                         }
                                         catch (e) {
@@ -1441,7 +1444,7 @@ var ToolsQuestionBankFacade = /** @class */ (function () {
                                             if (type == 1 || type == 3) {
                                                 letters = letters.slice(0, 1);
                                             }
-                                            application_1.Application.App.log.Info("视觉读题答案：" + letters.join("") + "（" + visionRaw.replace(/\s+/g, " ").slice(0, 40) + "）");
+                                            application_1.Application.App.log.Info("视觉读题答案：" + letters.join(""));
                                             if (type == 3) {
                                                 // 判断题：A=对(true) B=错(false)，后续统一转换逻辑会映射到题目自己的选项值
                                                 ret = { ok: true, correct: [{ option: (letters[0] == "A"), content: "" }], raw: "vision:" + letters.join(""), vision: true };
