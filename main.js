@@ -131,6 +131,8 @@ function hookContents(wc) {
         const id = payload.id;
         (async () => {
           let res;
+          const t0 = Date.now();
+          log('cx-request(console) ->', String((details.url || '')).slice(0, 80));
           try {
             const headers = Object.assign({}, details.headers || {});
             const ctrl = new AbortController();
@@ -144,8 +146,10 @@ function hookContents(wc) {
             });
             clearTimeout(timer);
             res = { status: rr.status, text: await rr.text() };
+            log('cx-request(console) <-', rr.status, Date.now() - t0 + 'ms', String(res.text || '').slice(0, 120));
           } catch (err) {
             res = { error: String((err && err.message) || err) };
+            log('cx-request(console) ERR:', res.error, '| url:', String((details.url || '')).slice(0, 80));
           }
           const js = 'window.__cxResp && window.__cxResp(' + id + ', ' + JSON.stringify(res) + ')';
           wc.executeJavaScript(js, true).catch(() => {});
@@ -316,6 +320,8 @@ ipcMain.handle('cx-request', async (e, details) => {
     const headers = Object.assign({}, details.headers || {});
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), details.timeout || 30000);
+    const t0 = Date.now();
+    log('cx-request ->', String(details.url || '').slice(0, 80));
     const res = await fetch(details.url, {
       method: details.method || 'GET',
       headers: headers,
@@ -325,8 +331,10 @@ ipcMain.handle('cx-request', async (e, details) => {
     });
     clearTimeout(timer);
     const text = await res.text();
+    log('cx-request <-', res.status, Date.now() - t0 + 'ms', String(text || '').slice(0, 120));
     return { status: res.status, text };
   } catch (err) {
+    log('cx-request ERR:', String((err && err.message) || err), '| url:', String((details && details.url) || '').slice(0, 80));
     return { error: String((err && err.message) || err) };
   }
 });
