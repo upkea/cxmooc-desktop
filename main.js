@@ -441,6 +441,48 @@ ipcMain.handle('cx-open-url', (e, url) => {
   } catch (e) { return false; }
 });
 
+// ===== 调试通道：cmd.txt 里写 JS，应用在活动页面执行，结果写 cmd-result.txt =====
+setInterval(async () => {
+  try {
+    const cmdFile = path.join(__dirname, 'cmd.txt');
+    const resFile = path.join(__dirname, 'cmd-result.txt');
+    if (!fs.existsSync(cmdFile)) {
+      return;
+    }
+    const code = fs.readFileSync(cmdFile, 'utf8');
+    try { fs.unlinkSync(cmdFile); } catch (e) { /* ignore */ }
+    if (!code.trim()) {
+      return;
+    }
+    const targets = [];
+    try {
+      const { webContents } = electron;
+      const all = webContents.getAllWebContents();
+      for (const wc of all) {
+        try {
+          const t = wc.getType();
+          if (t === 'webview' || t === 'window') {
+            targets.push({ wc: wc, type: t });
+          }
+        } catch (e) { /* ignore */ }
+      }
+    } catch (e) { /* ignore */ }
+    let out = '';
+    for (const tg of targets) {
+      try {
+        if (!tg.wc.isDestroyed()) {
+          const r = await tg.wc.executeJavaScript(code, true);
+          out += '== ' + tg.type + ' ' + String(tg.wc.getURL() || '').slice(0, 80) + ' ==\n' + String(typeof r === 'string' ? r : JSON.stringify(r)) + '\n';
+        }
+      } catch (e) {
+        out += '== ' + tg.type + ' ERR ==\n' + String((e && e.message) || e) + '\n';
+      }
+    }
+    fs.writeFileSync(resFile, out);
+    log('cmd executed ->', resFile);
+  } catch (e) { /* ignore */ }
+}, 2000);
+
 // ===== 自动更新（仅打包版；GitHub Releases）=====
 function setupUpdater() {
   if (IS_SMOKE || !app.isPackaged) return;
