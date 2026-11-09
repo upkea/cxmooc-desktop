@@ -114,6 +114,48 @@ function hookInjection(w) {
   w.webContents.on('did-fail-load', (e, code, desc, url) => log('fail-load:', code, desc || '', url || ''));
 }
 
+const CX_DOMAINS = /^(https?:\/\/([a-z0-9-]+\.)*(chaoxing\.com|xueyinonline\.com|zhihuishu\.com|erya100\.com)(\/|$))/i;
+function isCxUrl(u) { return !!u && CX_DOMAINS.test(u); }
+
+// 课程页经常 window.open 弹出——学习通域名一律开成应用内新窗口（保持注入），
+// 其他链接交给系统浏览器。
+const popups = [];
+function createPopup(url) {
+  try {
+    const p = new BrowserWindow({
+      width: 1200,
+      height: 850,
+      title: '学习通 · 学习辅助',
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: false,
+        nodeIntegration: false,
+        sandbox: false,
+      },
+    });
+    p.webContents.setUserAgent(CHROME_UA);
+    hookInjection(p);
+    p.webContents.setWindowOpenHandler(({ url: u }) => {
+      if (isCxUrl(u)) {
+        createPopup(u);
+      } else if (u && /^https?:/i.test(u)) {
+        shell.openExternal(u);
+      }
+      return { action: 'deny' };
+    });
+    popups.push(p);
+    p.on('closed', () => {
+      const i = popups.indexOf(p);
+      if (i >= 0) popups.splice(i, 1);
+    });
+    p.loadURL(url).catch((e) => log('popup load err:', e.message));
+    return true;
+  } catch (e) {
+    log('popup create failed:', e.message);
+    return false;
+  }
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1280,
@@ -130,7 +172,11 @@ function createWindow() {
   win.webContents.setUserAgent(CHROME_UA);
   hookInjection(win);
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url && /^https?:/i.test(url)) shell.openExternal(url);
+    if (isCxUrl(url)) {
+      createPopup(url);
+    } else if (url && /^https?:/i.test(url)) {
+      shell.openExternal(url);
+    }
     return { action: 'deny' };
   });
   // 关闭按钮 → 收进托盘（退出请用托盘菜单）
