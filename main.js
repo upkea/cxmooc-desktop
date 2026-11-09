@@ -355,21 +355,43 @@ ipcMain.handle('cx-request', async (e, details) => {
   }
 });
 
-// 视觉读题：整页可视区截图（Electron 原生 capturePage，稳定不出现平铺伪影）
+// 视觉读题：原生整窗截图 + 按题目元素精确裁剪（稳定且不会再截错题）
 ipcMain.handle('cx-capture', async (e, arg) => {
   const wc = e.sender;
   try {
-    let dataUrl = null;
-    // 原生整窗截图（capturePage 内部处理 DPI，结果稳定）
+    const rect = (arg && arg.rect) || null;
     const image = await wc.capturePage();
-    dataUrl = image.toDataURL();
-    log('capture: native', image.getSize().width + 'x' + image.getSize().height);
-    // 图片过宽就等比缩小（视觉接口对大图不友好）
+    const full = image.getSize();
+    let dataUrl = image.toDataURL();
+    log('capture: native', full.width + 'x' + full.height, rect ? 'crop' : 'full');
+    if (rect && rect.width > 10 && rect.height > 10) {
+      try {
+        // 视口 CSS 尺寸 → 图片像素缩放比
+        let vpW = 0;
+        try {
+          vpW = await wc.executeJavaScript('window.innerWidth', true);
+        } catch (err) { /* ignore */ }
+        const ratio = vpW > 0 ? full.width / vpW : 1;
+        const ni = nativeImage.createFromDataURL(dataUrl);
+        const cropX = Math.max(0, Math.floor(rect.x * ratio));
+        const cropY = Math.max(0, Math.floor(rect.y * ratio));
+        const cropW = Math.min(full.width - cropX, Math.floor(rect.width * ratio));
+        const cropH = Math.min(full.height - cropY, Math.floor(rect.height * ratio));
+        if (cropW > 20 && cropH > 20) {
+          const cropped = ni.crop({ x: cropX, y: cropY, width: cropW, height: cropH });
+          dataUrl = cropped.toDataURL();
+          log('capture cropped:', cropW + 'x' + cropH, 'ratio=' + ratio.toFixed(2));
+        }
+      } catch (err) {
+        log('capture crop failed:', String((err && err.message) || err));
+      }
+    }
+    // 过大就等比缩小
     try {
-      const ni = nativeImage.createFromDataURL(dataUrl);
-      const sz = ni.getSize();
+      const ni2 = nativeImage.createFromDataURL(dataUrl);
+      const sz = ni2.getSize();
       if (sz.width > 1800) {
-        const resized = ni.resize({ width: 1800, quality: 'better' });
+        const resized = ni2.resize({ width: 1800, quality: 'better' });
         dataUrl = resized.toDataURL();
         log('capture resized ->', resized.getSize().width + 'x' + resized.getSize().height);
       }
