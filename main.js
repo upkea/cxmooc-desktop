@@ -372,7 +372,7 @@ ipcMain.handle('cx-capture', async (e, arg) => {
       }
       const shot = await dbg.sendCommand('Page.captureScreenshot', {
         format: 'png',
-        clip: { x: x, y: y, width: w, height: h, scale: 2 },
+        clip: { x: x, y: y, width: w, height: h, scale: 3 },
         fromSurface: true,
       });
       if (shot && shot.data) {
