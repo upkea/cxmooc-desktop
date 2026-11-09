@@ -70,6 +70,17 @@ function log(...a) {
   LOG.push(new Date().toISOString() + ' ' + s);
   console.log('[cxmooc]', s);
 }
+// AI 请求走 Electron 网络栈（net.fetch，与页面加载同一通道）。
+// 这台机器上主进程的 Node fetch 会卡死超时，Chromium 网络栈则正常。
+function netFetch(url, opts) {
+  try {
+    const net = electron.net;
+    if (net && typeof net.fetch === 'function') {
+      return net.fetch(url, opts);
+    }
+  } catch (e) { /* ignore */ }
+  return fetch(url, opts);
+}
 setInterval(() => {
   if (LOG.length) {
     try {
@@ -125,7 +136,12 @@ function hookContents(wc) {
     wc.on('console-message', (e, level, message) => {
       try {
         const msg = typeof message === 'string' ? message : (e && e.message);
-        if (typeof msg !== 'string' || msg.indexOf('[CXREQ]') !== 0) return;
+        if (typeof msg !== 'string') return;
+        // 诊断输出：字体解密等 [CXxxx] 前缀的 console 全部写进 app.log
+        if (msg.indexOf('[CXFONT]') === 0 || msg.indexOf('[CXDEBG]') === 0) {
+          log('console:', msg.length > 700 ? msg.slice(0, 700) : msg);
+        }
+        if (msg.indexOf('[CXREQ]') !== 0) return;
         const payload = JSON.parse(msg.slice(7));
         const details = payload.d || {};
         const id = payload.id;
@@ -137,7 +153,7 @@ function hookContents(wc) {
             const headers = Object.assign({}, details.headers || {});
             const ctrl = new AbortController();
             const timer = setTimeout(() => ctrl.abort(), details.timeout || 30000);
-            const rr = await fetch(details.url, {
+            const rr = await netFetch(details.url, {
               method: details.method || 'GET',
               headers: headers,
               body: details.data || null,
@@ -322,7 +338,7 @@ ipcMain.handle('cx-request', async (e, details) => {
     const timer = setTimeout(() => ctrl.abort(), details.timeout || 30000);
     const t0 = Date.now();
     log('cx-request ->', String(details.url || '').slice(0, 80));
-    const res = await fetch(details.url, {
+    const res = await netFetch(details.url, {
       method: details.method || 'GET',
       headers: headers,
       body: details.data || null,
