@@ -355,43 +355,58 @@ ipcMain.handle('cx-request', async (e, details) => {
   }
 });
 
-// 视觉读题：把元素区域放大 2 倍再截图（文字更清晰，视觉模型识别率更高）
+// 视觉读题：CDP 高清截图（scale=2，不改变页面缩放，用户无感）
 ipcMain.handle('cx-capture', async (e, arg) => {
   const wc = e.sender;
   const id = String((arg && arg.id) || '');
-  const oldZoom = wc.getZoomFactor();
   try {
-    wc.setZoomFactor(Math.min(2.5, oldZoom * 2));
-    await new Promise((r) => setTimeout(r, 400));
+    // 让页面把元素滚到可视区并返回相对文档的坐标
     const rect = await wc.executeJavaScript(
       '(function(){var el=document.querySelector(\'[data-cxq="' + id + '"]\');' +
       'if(!el) return null; try{el.scrollIntoView({block:"center"});}catch(e){};' +
       'var r=el.getBoundingClientRect();' +
-      'return {x:r.left,y:r.top,w:r.width,h:r.height};})()',
+      'return {x:r.left+window.scrollX,y:r.top+window.scrollY,w:r.width,h:r.height};})()',
       true
     );
     if (!rect) {
       log('capture: element not found', id);
       return { error: 'element not found' };
     }
-    const w = Math.max(1, Math.min(Math.round(rect.w), 1400));
-    const h = Math.max(1, Math.min(Math.round(rect.h), 1800));
-    const image = await wc.capturePage({
-      x: Math.max(0, Math.round(rect.x)),
-      y: Math.max(0, Math.round(rect.y)),
-      width: w,
-      height: h,
-    });
-    const size = image.getSize();
-    log('capture:', size.width + 'x' + size.height, '(zoom ' + wc.getZoomFactor() + ')');
-    return { dataUrl: image.toDataURL() };
+    const w = Math.max(1, Math.min(Math.round(rect.w), 1200));
+    const h = Math.max(1, Math.min(Math.round(rect.h), 1600));
+    // 优先 CDP 高清截图（scale 2 倍，不动页面缩放）
+    try {
+      const dbg = wc.debugger;
+      if (!dbg.isAttached()) {
+        dbg.attach('1.3');
+      }
+      const shot = await dbg.sendCommand('Page.captureScreenshot', {
+        format: 'png',
+        clip: { x: Math.round(rect.x), y: Math.round(rect.y), width: w, height: h, scale: 2 },
+        fromSurface: true,
+      });
+      if (shot && shot.data) {
+        log('capture(cdp):', w + 'x' + h, '@2x');
+        return { dataUrl: 'data:image/png;base64,' + shot.data };
+      }
+    } catch (err) {
+      log('capture cdp failed, fallback zoom:', String((err && err.message) || err));
+    }
+    // 兜底：旧的放大截图方式
+    const oldZoom = wc.getZoomFactor();
+    try {
+      wc.setZoomFactor(Math.min(2.5, oldZoom * 2));
+      await new Promise((r) => setTimeout(r, 350));
+      const image = await wc.capturePage({ x: Math.max(0, Math.round(rect.x)), y: Math.max(0, Math.round(rect.y)), width: w, height: h });
+      return { dataUrl: image.toDataURL() };
+    } finally {
+      try {
+        wc.setZoomFactor(oldZoom);
+      } catch (err) { /* ignore */ }
+    }
   } catch (err) {
     log('capture ERR:', String((err && err.message) || err));
     return { error: String((err && err.message) || err) };
-  } finally {
-    try {
-      wc.setZoomFactor(oldZoom);
-    } catch (err) { /* ignore */ }
   }
 });
 
