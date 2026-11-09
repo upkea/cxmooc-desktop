@@ -36,8 +36,7 @@ jobs:
 
       - name: 生成最新版信息（自动更新用 latest.yml）
         shell: pwsh
-        run: |
-          node -e "const fs=require('fs'),crypto=require('crypto');const fsx=require('fs').readdirSync('release').filter(f=>f.endsWith('.exe')&&!f.endsWith('.blockmap'));if(fsx.length){const name=fsx[0];const buf=fs.readFileSync('release/'+name);const sha=crypto.createHash('sha512').update(buf).digest('base64');const yml=['version: '+require('./package.json').version,'files:','  - url: '+name,'    sha512: '+sha,'    size: '+buf.length,'path: '+name,'sha512: '+sha,\"releaseDate: '\"+new Date().toISOString()+\"'\",''].join('\n');fs.writeFileSync('release/latest.yml',yml);}"
+        run: node make-latest-yml-ci.js
 
       - name: 发布 GitHub Release（打 tag 时）
         if: startsWith(github.ref, 'refs/tags/v')
