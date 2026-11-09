@@ -32,4 +32,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: release
-          files: release/*
+          files: |
+            release/Setup-*.exe
+            release/Setup-*.blockmap
+            release/latest.yml
