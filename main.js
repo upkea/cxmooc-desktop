@@ -355,16 +355,27 @@ ipcMain.handle('cx-request', async (e, details) => {
   }
 });
 
-// 视觉读题：CDP 高清截图（scale=2，不改变页面缩放，用户无感）
-// 坐标由页面侧换算成顶层文档坐标（题目可能在任何 iframe 里）
+// 视觉读题：整页可视区截图（CDP scale=2，不改变页面缩放，用户无感）
 ipcMain.handle('cx-capture', async (e, arg) => {
   const wc = e.sender;
-  const rect = (arg && arg.rect) || {};
   try {
-    const x = Math.max(0, Math.round(rect.x || 0));
-    const y = Math.max(0, Math.round(rect.y || 0));
-    const w = Math.max(1, Math.min(Math.round(rect.width || 100), 1200));
-    const h = Math.max(1, Math.min(Math.round(rect.height || 100), 1600));
+    const full = !!(arg && arg.full);
+    const vp = wc.getOwnerBrowserWindow ? wc.getOwnerBrowserWindow() : null;
+    let viewW = 1200;
+    let viewH = 800;
+    try {
+      const b = BrowserWindow.fromWebContents(wc);
+      if (b) {
+        const cs = b.getContentSize();
+        viewW = cs[0];
+        viewH = cs[1];
+      }
+    } catch (err) { /* ignore */ }
+    const x = 0;
+    const y = 0;
+    const w = Math.min(viewW, 1400);
+    const h = Math.min(viewH, 900);
+    let dataUrl = null;
     try {
       const dbg = wc.debugger;
       if (!dbg.isAttached()) {
@@ -372,20 +383,32 @@ ipcMain.handle('cx-capture', async (e, arg) => {
       }
       const shot = await dbg.sendCommand('Page.captureScreenshot', {
         format: 'png',
-        clip: { x: x, y: y, width: w, height: h, scale: 3 },
+        clip: { x: x, y: y, width: w, height: h, scale: full ? 2 : 2 },
         fromSurface: true,
       });
       if (shot && shot.data) {
-        log('capture(cdp):', w + 'x' + h, '@2x');
-        return { dataUrl: 'data:image/png;base64,' + shot.data };
+        dataUrl = 'data:image/png;base64,' + shot.data;
+        log('capture(cdp):', w + 'x' + h, '@2x', full ? '(full viewport)' : '');
       }
     } catch (err) {
       log('capture cdp failed:', String((err && err.message) || err));
     }
-    // 兜底：普通截图
-    const image = await wc.capturePage({ x: x, y: y, width: w, height: h });
-    log('capture:', image.getSize().width + 'x' + image.getSize().height);
-    return { dataUrl: image.toDataURL() };
+    if (!dataUrl) {
+      const image = await wc.capturePage({ x: x, y: y, width: w, height: h });
+      dataUrl = image.toDataURL();
+      log('capture:', image.getSize().width + 'x' + image.getSize().height);
+    }
+    // 太大就缩放（视觉接口对大图不友好）
+    try {
+      const ni = nativeImage.createFromDataURL(dataUrl);
+      const sz = ni.getSize();
+      if (sz.width > 1800) {
+        const resized = ni.resize({ width: 1800, quality: 'better' });
+        dataUrl = resized.toDataURL();
+        log('capture resized ->', resized.getSize().width + 'x' + resized.getSize().height);
+      }
+    } catch (err) { /* ignore */ }
+    return { dataUrl: dataUrl };
   } catch (err) {
     log('capture ERR:', String((err && err.message) || err));
     return { error: String((err && err.message) || err) };
