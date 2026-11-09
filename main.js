@@ -1,8 +1,17 @@
 // cxmooc-desktop 主进程
 // Electron 壳：内嵌学习通网页，注入现有用户脚本（shims + 无头 bundle）+ GM 垫片
-const { app, BrowserWindow, session, ipcMain, shell } = require('electron');
+const electron = require('electron');
+const { app, BrowserWindow, session, ipcMain, shell } =
+  electron && typeof electron === 'object' && electron.app ? electron : {};
 const path = require('path');
 const fs = require('fs');
+
+if (!app) {
+  // 以错误模式启动（比如被 node 运行 / ELECTRON_RUN_AS_NODE=1）时给出明确提示
+  console.error('[cxmooc] Electron 以错误模式启动：require("electron") 没返回主进程 API。');
+  console.error('[cxmooc] 请双击 start.bat 启动，不要用 node main.js。');
+  process.exit(2);
+}
 
 const IS_SMOKE = process.argv.includes('--smoke');
 
