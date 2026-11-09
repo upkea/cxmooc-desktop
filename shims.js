@@ -9,7 +9,16 @@
 (function () {
   try {
     var w = window;
-    var bridge = typeof w.__cxIpcRequest === 'function' ? w.__cxIpcRequest : null;
+    // 注意：不要在这里一次性缓存桥的存在。
+    // document-start 注入早于 preload 执行，那时 __cxIpcRequest 还没被挂上；
+    // 必须每次调用时实时检测（配置读写那两条已经是实时检测了）。
+    function liveBridge() {
+      try {
+        return typeof w.__cxIpcRequest === 'function' ? w.__cxIpcRequest : null;
+      } catch (e) {
+        return null;
+      }
+    }
 
     // ---- 无桥时的异步上行通道 ----
     var cxRespSeq = 1;
@@ -53,8 +62,9 @@
       w.GM_xmlhttpRequest = function (details) {
         details = details || {};
         function fail(e) { if (details.onerror) details.onerror(e); }
-        if (bridge) {
-          bridge(details)
+        var invoke = liveBridge();
+        if (invoke) {
+          invoke(details)
             .then(function (res) { runResponse(details, res, details.onload, details.onreadystatechange, details.onerror); })
             .catch(fail);
         } else {
