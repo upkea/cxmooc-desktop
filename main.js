@@ -120,6 +120,39 @@ function hookContents(wc) {
       }).catch(() => {});
     } catch (e) { /* ignore */ }
   });
+  // 无 preload 桥兜底：页面 console 上行 [CXREQ] → 主进程 fetch → executeJavaScript 回填
+  try {
+    wc.on('console-message', (e, level, message) => {
+      try {
+        const msg = typeof message === 'string' ? message : (e && e.message);
+        if (typeof msg !== 'string' || msg.indexOf('[CXREQ]') !== 0) return;
+        const payload = JSON.parse(msg.slice(7));
+        const details = payload.d || {};
+        const id = payload.id;
+        (async () => {
+          let res;
+          try {
+            const headers = Object.assign({}, details.headers || {});
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), details.timeout || 30000);
+            const rr = await fetch(details.url, {
+              method: details.method || 'GET',
+              headers: headers,
+              body: details.data || null,
+              signal: ctrl.signal,
+              redirect: 'follow',
+            });
+            clearTimeout(timer);
+            res = { status: rr.status, text: await rr.text() };
+          } catch (err) {
+            res = { error: String((err && err.message) || err) };
+          }
+          const js = 'window.__cxResp && window.__cxResp(' + id + ', ' + JSON.stringify(res) + ')';
+          wc.executeJavaScript(js, true).catch(() => {});
+        })();
+      } catch (err) { /* ignore */ }
+    });
+  } catch (e) { /* ignore */ }
   wc.on('did-finish-load', () => log('load:', wc.getURL()));
   wc.on('did-fail-load', (e, code, desc, url) => log('fail-load:', code, desc || '', url || ''));
   // 页面里 window.open：学习通域名 → 转成标签页；其他 → 系统浏览器
@@ -246,10 +279,15 @@ ipcMain.on('cx-cfg-set', (e, arg) => {
   try {
     store.set(String(arg && arg.k), arg && arg.v);
     e.returnValue = true;
-    // 通知所有页面（含标签 webview）让面板能立即刷新
+    // 同步给所有页面（含标签 webview）：事件 + 直接把值写进他们的 localStorage
     try {
+      const k = String(arg && arg.k);
+      const v = String(arg && arg.v);
+      const js = 'try{ localStorage.setItem(' + JSON.stringify(k) + ', ' + JSON.stringify(v) + ') }catch(e){}';
       for (const wc of webContentsIterator()) {
-        wc.send('cx-cfg-changed', { k: String(arg && arg.k), v: arg && arg.v });
+        if (wc === e.sender) continue;
+        try { wc.send('cx-cfg-changed', { k: k, v: v }); } catch (err) { /* ignore */ }
+        try { wc.executeJavaScript(js, true).catch(() => {}); } catch (err) { /* ignore */ }
       }
     } catch (err) { /* ignore */ }
   } catch (err) {

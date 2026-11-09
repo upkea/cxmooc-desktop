@@ -1,35 +1,72 @@
 // GM 垫片：让为油猴写的脚本在 Electron 页面环境里跑起来
 // 由 main.js 在 document-start 注入（在用户脚本之前）。
-// GM_getValue/GM_setValue 同步直读主进程统一配置（userData/cx-config.json），
-// 页面「更改API」面板和原生「设置」窗口读写的是同一份数据。
+//
+// 两层数据通路：
+// 1) preload 桥（__cxIpcRequest / __cxCfg*）——当页面加载了 preload 时用；
+// 2) 无桥兜底（webview 标签里 preload 可能没加载）：
+//    - GM_getValue/GM_setValue 走 localStorage（同步，原生设置窗口由主进程广播写入）；
+//    - GM_xmlhttpRequest 走 console 上行 + 主进程 fetch + executeJavaScript 回调。
 (function () {
   try {
     var w = window;
+    var bridge = typeof w.__cxIpcRequest === 'function' ? w.__cxIpcRequest : null;
+
+    // ---- 无桥时的异步上行通道 ----
+    var cxRespSeq = 1;
+    var cxPending = {};
+    w.__cxResp = function (id, res) {
+      try {
+        if (cxPending[id]) {
+          var cb = cxPending[id];
+          delete cxPending[id];
+          cb(res);
+        }
+      } catch (e) { /* ignore */ }
+    };
+    function uplink(details, cb) {
+      var id = ++cxRespSeq;
+      cxPending[id] = cb;
+      try {
+        console.log('[CXREQ]' + JSON.stringify({ id: id, d: details }));
+        setTimeout(function () {
+          if (cxPending[id]) {
+            delete cxPending[id];
+            cb({ error: '请求超时（网络被拦截）' });
+          }
+        }, (details.timeout || 30000) + 5000);
+      } catch (e) {
+        delete cxPending[id];
+        cb({ error: String(e && e.message || e) });
+      }
+    }
+    function runResponse(details, res, onload, onreadystatechange, onerror) {
+      if (res && res.error) {
+        if (onerror) onerror(res);
+        return;
+      }
+      var resp = { readyState: 4, status: (res && res.status) || 0, responseText: (res && res.text) || '' };
+      if (onreadystatechange) onreadystatechange(resp);
+      if (onload) onload(resp);
+    }
+
     if (typeof w.GM_xmlhttpRequest !== 'function') {
       w.GM_xmlhttpRequest = function (details) {
         details = details || {};
-        var invoke = w.__cxIpcRequest;
-        if (typeof invoke !== 'function') {
-          if (details.onerror) details.onerror({ error: 'no ipc bridge' });
-          return;
+        function fail(e) { if (details.onerror) details.onerror(e); }
+        if (bridge) {
+          bridge(details)
+            .then(function (res) { runResponse(details, res, details.onload, details.onreadystatechange, details.onerror); })
+            .catch(fail);
+        } else {
+          uplink(details, function (res) { runResponse(details, res, details.onload, details.onreadystatechange, details.onerror); });
         }
-        invoke(details)
-          .then(function (res) {
-            if (res && res.error) {
-              if (details.onerror) details.onerror(res);
-              return;
-            }
-            var resp = { readyState: 4, status: (res && res.status) || 0, responseText: (res && res.text) || '' };
-            if (details.onreadystatechange) details.onreadystatechange(resp);
-            if (details.onload) details.onload(resp);
-          })
-          .catch(function (e) {
-            if (details.onerror) details.onerror(e);
-          });
       };
+    } else {
+      // 已有 GM_xmlhttpRequest 时也保留原样
     }
+
     if (typeof w.GM_getValue !== 'function') {
-      w.GM_getValue = function (k, d) {
+      var storageLike = function (k, d) {
         try {
           if (typeof w.__cxCfgGet === 'function') {
             var v = w.__cxCfgGet(k, null);
@@ -41,6 +78,7 @@
           return lv == null ? d : lv;
         } catch (e) { return d; }
       };
+      w.GM_getValue = storageLike;
     }
     if (typeof w.GM_setValue !== 'function') {
       w.GM_setValue = function (k, v) {
@@ -53,15 +91,12 @@
     if (typeof w.GM_notification !== 'function') {
       w.GM_notification = function (d) {
         try {
-          var title = (d && d.title) || '网课小工具';
-          var text = String((d && d.text) || '').slice(0, 120);
-          new Notification(title, { body: text });
+          new Notification((d && d.title) || '网课小工具', { body: String((d && d.text) || '').slice(0, 120) });
         } catch (e) { /* ignore */ }
       };
     }
     w.unsafeWindow = w;
     w.__cxInjected = true;
-    // 主进程配置变更回调（原生设置窗口修改后，页面面板可监听刷新）
     if (typeof w.__cxOnCfgChanged !== 'function') w.__cxOnCfgChanged = null;
   } catch (e) {
     // ignore
