@@ -4232,9 +4232,13 @@ function firstFamilyName(fontFamily) {
     f = f.replace(/['"]/g, "").trim();
     return f;
 }
+// 字形缓存：同一字体家族下，已还原的「乱码字→正确字」映射全局复用，
+// 每道新题只对没见过的字做 Canvas 比对（又快又不漏题）。
+var charMapCache = {};
+var candidateCache = {};
 function DecodeChaoxingFont(win) {
     return __awaiter(this, void 0, Promise, function () {
-        var doc_1, els, family, cs, targets, seen, i, t, k, ch, fonts, e_1, quoted, tHashes, blankCount, i, bits, cache_1, getTable, resolved_1, bestDists, ti, t, targetBits, bestChar, bestDist, fi, table, ci, dist, done, k, i, el, text, t, e_2;
+        var doc_1, els, family, cs, targets, seen, i, t, k, ch, fonts, e_1, quoted, tHashes, blankCount, i, bits, getTable, cache, newCount, ti, t, targetBits, bestChar, bestDist, fi, table, ci, dist, done, ti, rate, i, el, text, t, e_2;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
@@ -4246,9 +4250,6 @@ function DecodeChaoxingFont(win) {
                     els = doc_1.querySelectorAll(".font-cxsecret");
                     if (!els || els.length == 0) {
                         return [2 /*return*/, false];
-                    }
-                    if (win.__cxFontDecodeDone) {
-                        return [2 /*return*/, true];
                     }
                     family = "";
                     try {
@@ -4324,10 +4325,9 @@ function DecodeChaoxingFont(win) {
                         console.log("[CXFONT] font renders blank, skip (keep page untouched)");
                         return [2 /*return*/, false];
                     }
-                    cache_1 = {};
                     getTable = function (font) {
-                        if (cache_1.hasOwnProperty(font)) {
-                            return cache_1[font];
+                        if (candidateCache.hasOwnProperty(font)) {
+                            return candidateCache[font];
                         }
                         var table = [];
                         for (var ci = 0; ci < COMMON_CHARS.length; ci++) {
@@ -4339,13 +4339,16 @@ function DecodeChaoxingFont(win) {
                                 // ignore
                             }
                         }
-                        cache_1[font] = table;
+                        candidateCache[font] = table;
                         return table;
                     };
-                    resolved_1 = {};
-                    bestDists = [];
+                    cache = charMapCache[family] || (charMapCache[family] = {});
+                    newCount = 0;
                     for (ti = 0; ti < targets.length; ti++) {
                         t = targets[ti];
+                        if (cache.hasOwnProperty(t)) {
+                            continue;
+                        }
                         targetBits = tHashes[t];
                         if (!targetBits || bitCount(targetBits) < 6) {
                             continue;
@@ -4369,39 +4372,40 @@ function DecodeChaoxingFont(win) {
                             }
                         }
                         if (bestChar && bestDist <= 240) {
-                            resolved_1[t] = bestChar;
-                            bestDists.push(bestDist);
+                            cache[t] = bestChar;
+                            newCount++;
                         }
                     }
                     done = 0;
-                    for (k in resolved_1) {
-                        if (resolved_1.hasOwnProperty(k)) {
+                    for (ti = 0; ti < targets.length; ti++) {
+                        if (cache.hasOwnProperty(targets[ti])) {
                             done++;
                         }
                     }
                     try {
-                        console.log("[CXFONT] resolved=" + done + "/" + targets.length + " sample=" + JSON.stringify(Object.keys(resolved_1).slice(0, 8).map(function (k) { return k + "=>" + resolved_1[k]; }).join(" ")));
+                        console.log("[CXFONT] cached=" + done + "/" + targets.length + " newMatched=" + newCount);
                     }
                     catch (e) { /* ignore */ }
-                    // 解析率不足 60% → 不动页面（宁可乱，也不能改坏）
-                    if (done < Math.max(1, targets.length * 0.6)) {
-                        console.log("[CXFONT] low resolve rate, keep page untouched");
+                    if (done == 0) {
+                        console.log("[CXFONT] nothing resolved, keep page untouched");
                         return [2 /*return*/, false];
                     }
-                    // 替换页面文字并去掉加密字体类名（此时显示的是正确汉字，用系统字体渲染）
+                    rate = done / targets.length;
+                    // 替换页面文字；只有解析率高时才去掉加密字体类名（否则保留页面字体渲染残字）
                     for (i = 0; i < els.length; i++) {
                         el = els[i];
                         text = String(el.textContent || "");
-                        for (t in resolved_1) {
-                            if (resolved_1.hasOwnProperty(t)) {
-                                text = text.split(t).join(resolved_1[t]);
+                        for (t in cache) {
+                            if (cache.hasOwnProperty(t)) {
+                                text = text.split(t).join(cache[t]);
                             }
                         }
                         el.textContent = text;
-                        el.classList.remove("font-cxsecret");
+                        if (rate >= 0.95) {
+                            el.classList.remove("font-cxsecret");
+                        }
                     }
-                    win.__cxFontDecodeDone = true;
-                    application_1.Application.App.log.Info("字体解密完成，还原 " + done + "/" + targets.length + " 个字符");
+                    application_1.Application.App.log.Info("字体解密完成，还原 " + done + "/" + targets.length + " 个字符" + (rate >= 0.95 ? "（已去加密字体）" : "（文本已替换，字体类名保留）"));
                     return [2 /*return*/, true];
                 case 6:
                     e_2 = _a.sent();
