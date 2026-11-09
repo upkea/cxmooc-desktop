@@ -40,7 +40,7 @@
         setTimeout(function () {
           if (cxPending[id]) {
             delete cxPending[id];
-            cb({ error: '请求超时（网络被拦截）' });
+            cb({ error: '请求超时（上行通道无回应）' });
           }
         }, (details.timeout || 30000) + 5000);
       } catch (e) {
@@ -50,7 +50,11 @@
     }
     function runResponse(details, res, onload, onreadystatechange, onerror) {
       if (res && res.error) {
-        if (onerror) onerror(res);
+        // 把失败原因塞成 HTTP 598 让页面面板直接显示出来（面板会把非预期状态码打给用户）
+        var diag = 'CXDIAG:' + String(res.error || 'BRIDGE_FAILED');
+        var resp = { readyState: 4, status: 598, responseText: diag };
+        if (onreadystatechange) onreadystatechange(resp);
+        if (onload) onload(resp);
         return;
       }
       var resp = { readyState: 4, status: (res && res.status) || 0, responseText: (res && res.text) || '' };
@@ -61,12 +65,13 @@
     if (typeof w.GM_xmlhttpRequest !== 'function') {
       w.GM_xmlhttpRequest = function (details) {
         details = details || {};
-        function fail(e) { if (details.onerror) details.onerror(e); }
+        function fail(e) { runResponse(details, { status: 598, text: 'CXDIAG:' + String(e && e.message || 'BRIDGE_MISSING') }, details.onload, details.onreadystatechange); }
         var invoke = liveBridge();
+        try { console.log('[CXDEBG] request url=' + String((details.url || '')).slice(0, 60) + ' bridge=' + (invoke ? 'yes' : 'NO')); } catch (e) { /* ignore */ }
         if (invoke) {
           invoke(details)
             .then(function (res) { runResponse(details, res, details.onload, details.onreadystatechange, details.onerror); })
-            .catch(fail);
+            .catch(function (e) { fail(e); });
         } else {
           uplink(details, function (res) { runResponse(details, res, details.onload, details.onreadystatechange, details.onerror); });
         }
