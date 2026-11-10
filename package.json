@@ -1,6 +1,6 @@
 {
   "name": "cxmooc-desktop",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "description": "学习通网课学习辅助桌面版（Electron，MIT，仅供个人学习辅助使用）",
   "main": "main.js",
   "scripts": {
